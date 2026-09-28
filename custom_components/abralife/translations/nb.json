@@ -1,0 +1,90 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Koble til Abralife",
+        "description": "Logg inn med samme e-post og passord som i Abralife-appen. Passordet brukes bare én gang for å hente en innloggingsnøkkel og lagres aldri i Home Assistant.",
+        "data": {
+          "username": "E-post",
+          "password": "Passord"
+        },
+        "sections": {
+          "api_settings": {
+            "name": "Avanserte API-innstillinger",
+            "description": "Er vanligvis ferdig utfylt. Verdiene finner du på {portal}.",
+            "data": {
+              "region": "AWS-region",
+              "user_pool_id": "Cognito user pool-ID",
+              "client_id": "Cognito app client-ID",
+              "api_url": "GraphQL (AppSync)-URL"
+            }
+          }
+        }
+      },
+      "home": {
+        "title": "Velg hjem",
+        "description": "Kontoen din har flere hjem. Velg hvilket du vil legge til (de andre kan legges til senere).",
+        "data": {
+          "home_id": "Hjem"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Logg inn på nytt",
+        "description": "Innloggingen for {username} har utløpt. Skriv inn Abralife-passordet ditt på nytt.",
+        "data": {
+          "password": "Passord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Feil e-post eller passord.",
+      "cannot_connect": "Fikk ikke kontakt med Abralife. Sjekk nettverket og API-innstillingene.",
+      "mfa_not_supported": "Kontoen krever tofaktor eller passordbytte. Fullfør det i Abralife-appen først.",
+      "missing_api_settings": "Fyll inn alle feltene under Avanserte API-innstillinger.",
+      "unknown": "Uventet feil, se loggen."
+    },
+    "abort": {
+      "already_configured": "Dette hjemmet er allerede lagt til.",
+      "no_homes": "Fant ingen hjem på denne kontoen.",
+      "reauth_successful": "Logget inn på nytt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Abralife-innstillinger",
+        "data": {
+          "allow_open_valve": "Tillat å åpne vannet fra Home Assistant",
+          "scan_interval": "Oppdateringsintervall"
+        },
+        "data_description": {
+          "allow_open_valve": "Stenging er alltid tillatt. Slå bare på åpning hvis du er sikker på at ingen automasjon kan åpne vannet under en aktiv lekkasje.",
+          "scan_interval": "Hvor ofte Abralife-skyen spørres."
+        }
+      }
+    }
+  },
+  "entity": {
+    "valve": {
+      "water_valve": {
+        "name": "Vannventil"
+      }
+    },
+    "binary_sensor": {
+      "leak": {
+        "name": "Lekkasje"
+      },
+      "online": {
+        "name": "Tilkobling"
+      }
+    }
+  },
+  "exceptions": {
+    "valve_failed": {
+      "message": "Klarte ikke å styre ventilen: {error}"
+    },
+    "open_disabled": {
+      "message": "Åpning av vann fra Home Assistant er slått av i integrasjonens innstillinger."
+    }
+  }
+}

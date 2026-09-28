@@ -1,0 +1,90 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Abralife",
+        "description": "Sign in with the same e-mail and password you use in the Abralife app. The password is only used once to get a login token and is never stored in Home Assistant.",
+        "data": {
+          "username": "E-mail",
+          "password": "Password"
+        },
+        "sections": {
+          "api_settings": {
+            "name": "Advanced API settings",
+            "description": "Normally pre-filled. Values are listed on {portal}.",
+            "data": {
+              "region": "AWS region",
+              "user_pool_id": "Cognito user pool ID",
+              "client_id": "Cognito app client ID",
+              "api_url": "GraphQL (AppSync) URL"
+            }
+          }
+        }
+      },
+      "home": {
+        "title": "Choose home",
+        "description": "Your account has several homes. Pick the one to add (you can add the others later).",
+        "data": {
+          "home_id": "Home"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The login for {username} has expired. Enter your Abralife password again.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Wrong e-mail or password.",
+      "cannot_connect": "Could not reach Abralife. Check the network and the API settings.",
+      "mfa_not_supported": "The account requires two-factor authentication or a password change. Finish that in the Abralife app first.",
+      "missing_api_settings": "Fill in all fields under Advanced API settings.",
+      "unknown": "Unexpected error, see the log."
+    },
+    "abort": {
+      "already_configured": "This home is already added.",
+      "no_homes": "No homes were found on this account.",
+      "reauth_successful": "Signed in again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Abralife options",
+        "data": {
+          "allow_open_valve": "Allow opening the water from Home Assistant",
+          "scan_interval": "Update interval"
+        },
+        "data_description": {
+          "allow_open_valve": "Closing is always allowed. Only enable opening if you are sure automations can't reopen the water during an active leak.",
+          "scan_interval": "How often to poll the Abralife cloud."
+        }
+      }
+    }
+  },
+  "entity": {
+    "valve": {
+      "water_valve": {
+        "name": "Water valve"
+      }
+    },
+    "binary_sensor": {
+      "leak": {
+        "name": "Leak"
+      },
+      "online": {
+        "name": "Connection"
+      }
+    }
+  },
+  "exceptions": {
+    "valve_failed": {
+      "message": "Could not control the valve: {error}"
+    },
+    "open_disabled": {
+      "message": "Opening the water from Home Assistant is disabled in the integration options."
+    }
+  }
+}

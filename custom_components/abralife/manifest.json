@@ -1,0 +1,13 @@
+{
+  "domain": "abralife",
+  "name": "Abralife (Waterguard+)",
+  "codeowners": ["@jrgenl"],
+  "config_flow": true,
+  "documentation": "https://github.com/jrgenl/ha-abralife",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/jrgenl/ha-abralife/issues",
+  "loggers": ["custom_components.abralife", "pycognito"],
+  "requirements": ["pycognito>=2024.5.1"],
+  "version": "0.1.0"
+}
