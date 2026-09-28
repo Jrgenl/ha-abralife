@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 16 480 480" width="512" height="512">
+  <defs>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2F9BF0"/>
+      <stop offset="1" stop-color="#0B4F9C"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7FD3FF"/>
+      <stop offset="1" stop-color="#2F9BF0"/>
+    </linearGradient>
+    <clipPath id="drop">
+      <path d="M256 120 C256 120 162 232 162 300 A94 94 0 0 0 350 300 C350 232 256 120 256 120 Z"/>
+    </clipPath>
+  </defs>
+  <!-- shield -->
+  <path d="M256 16 L440 76 Q456 81 456 98 L456 238 C456 360 376 446 256 496 C136 446 56 360 56 238 L56 98 Q56 81 72 76 Z"
+        fill="url(#shield)"/>
+  <!-- drop -->
+  <path d="M256 120 C256 120 162 232 162 300 A94 94 0 0 0 350 300 C350 232 256 120 256 120 Z" fill="#FFFFFF"/>
+  <!-- water level with a wave, clipped to the drop -->
+  <g clip-path="url(#drop)">
+    <path d="M150 318 C185 296 220 296 256 318 C292 340 327 340 362 318 L362 410 L150 410 Z" fill="url(#water)"/>
+  </g>
+  <path d="M200 300 C200 272 214 248 228 228" fill="none" stroke="#CFEFFF" stroke-width="14" stroke-linecap="round"/>
+</svg>

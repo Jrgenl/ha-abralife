@@ -1,3 +1,5 @@
+<img src="custom_components/abralife/brand/icon.png" alt="" width="96" align="right">
+
 # Abralife (Waterguard+) for Home Assistant
 
 Uoffisiell Home Assistant-integrasjon for **Waterguard+** vannlekkasjesikring via

@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/jrgenl/ha-abralife/issues",
   "loggers": ["custom_components.abralife", "pycognito"],
   "requirements": ["pycognito>=2024.5.1"],
-  "version": "0.1.2"
+  "version": "0.1.3"
 }
