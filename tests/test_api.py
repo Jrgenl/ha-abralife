@@ -34,7 +34,7 @@ def test_parse_leak_and_fault() -> None:
         "traits": [
             {"attributes": [
                 {"__typename": "TraitAttributeAlarm", "alarm": "WATER_LEAK"},
-                {"__typename": "TraitAttributeFault", "fault": {"code": "E12", "name": "Cable cut", "description": None}},
+                {"__typename": "TraitAttributeFault", "fault": [{"code": "E12", "name": "Cable cut", "description": None}]},
             ]}
         ],
     }
@@ -65,6 +65,7 @@ async def test_refresh_and_get_data(hass: HomeAssistant, aioclient_mock: Aiohttp
     responses = [
         (401, {"errors": [{"message": "Unauthorized"}]}),
         (200, {"data": {"homes": [RAW_HOME]}}),
+        (200, {"data": {"homes": []}}),  # extras
         (200, {"data": {"alarms": {"alarms": [
             {"__typename": "WaterAlarm", "id": "a1", "state": "ALARM", "triggeredAt": "2026-09-28T06:00:00Z"},
             {"__typename": "FireAlarm", "id": "a2", "state": "CLEARED", "triggeredAt": None},
@@ -83,7 +84,7 @@ async def test_refresh_and_get_data(hass: HomeAssistant, aioclient_mock: Aiohttp
     assert data.water_alarm is True
     assert client.refresh_token == "rt"  # no rotation returned -> keep old
     auth = [c[3]["Authorization"] for c in aioclient_mock.mock_calls if str(c[1]) == API]
-    assert auth == ["idt", "acc", "acc"]
+    assert auth == ["idt", "acc", "acc", "acc"]
 
 
 async def test_set_valve_uses_unlock_mutation(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
@@ -105,3 +106,12 @@ async def test_mutation_errors_raise(hass: HomeAssistant, aioclient_mock: Aiohtt
         assert "Valve did not respond" in str(err)
     else:
         raise AssertionError("expected AbraError")
+
+
+async def test_set_valve_open_percent(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    _cognito(aioclient_mock)
+    aioclient_mock.post(API, json={"data": {"deviceSetOpenPercent": {"command": {}, "errors": []}}})
+    await _client(hass).set_valve("v1", True, use_open_percent=True)
+    body = [c[2] for c in aioclient_mock.mock_calls if str(c[1]) == API][0]
+    assert "deviceSetOpenPercent" in body["query"]
+    assert body["variables"] == {"deviceId": "v1", "percent": 100.0}

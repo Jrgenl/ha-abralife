@@ -49,6 +49,29 @@ query AbraHomes {{
 }}
 """
 
+# Non-null fields that may be unresolved on some devices. A resolver error on
+# a non-null field nulls every parent up to ``homes``, so these are fetched
+# separately: if this query fails the main poll still works.
+EXTRAS_QUERY = """
+query AbraExtras {
+  homes {
+    id
+    hubs {
+      devices {
+        id
+        traits {
+          attributes {
+            __typename
+            ... on TraitAttributeOpenPercent { openPercent }
+            ... on TraitAttributeCurrentPowerSource { currentPowerSource }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 HOME_IDS_QUERY = """
 query AbraHomeIds {
   homes {
@@ -71,7 +94,23 @@ query AbraAlarms($homeId: ID!) {
 }
 """
 
-# Abra models the water valve as "unlocked" = open (see SDK setValveOpen).
+# Waterguard+ valves (Linkbox+) advertise the OPEN_PERCENT command and report
+# TraitAttributeOpenPercent; 0 = closed, 100 = open.
+SET_OPEN_PERCENT_MUTATION = """
+mutation AbraSetOpenPercent($deviceId: ID!, $percent: Float!) {
+  deviceSetOpenPercent(deviceId: $deviceId, openPercent: $percent, commandSource: CUSTOMER) {
+    command { commandState commandType }
+    errors {
+      __typename
+      ... on DeviceDoesNotExistError { message }
+      ... on TraitNotSupportedForDeviceError { message }
+      ... on TraitUpdateFailedError { message }
+    }
+  }
+}
+"""
+
+# Valves that advertise UNLOCK instead: "unlocked" = open (see SDK setValveOpen).
 SET_VALVE_MUTATION = """
 mutation AbraSetValve($deviceId: ID!, $open: Boolean!) {
   deviceSetUnlocked(deviceId: $deviceId, isUnlocked: $open, commandSource: CUSTOMER) {

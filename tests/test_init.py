@@ -42,7 +42,7 @@ async def test_entities(hass: HomeAssistant, mock_api: dict[str, AsyncMock]) -> 
 async def test_close_allowed_open_blocked(hass: HomeAssistant, mock_api: dict[str, AsyncMock]) -> None:
     await _setup(hass)
     await hass.services.async_call("valve", "close_valve", {"entity_id": "valve.hovedkran"}, blocking=True)
-    mock_api["set_valve"].assert_awaited_once_with("v1", False)
+    mock_api["set_valve"].assert_awaited_once_with("v1", False, use_open_percent=False)
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call("valve", "open_valve", {"entity_id": "valve.hovedkran"}, blocking=True)
 
@@ -50,7 +50,7 @@ async def test_close_allowed_open_blocked(hass: HomeAssistant, mock_api: dict[st
 async def test_open_when_enabled(hass: HomeAssistant, mock_api: dict[str, AsyncMock]) -> None:
     await _setup(hass, {"allow_open_valve": True})
     await hass.services.async_call("valve", "open_valve", {"entity_id": "valve.hovedkran"}, blocking=True)
-    mock_api["set_valve"].assert_awaited_once_with("v1", True)
+    mock_api["set_valve"].assert_awaited_once_with("v1", True, use_open_percent=False)
 
 
 async def test_auth_failure_starts_reauth(hass: HomeAssistant, mock_api: dict[str, AsyncMock]) -> None:

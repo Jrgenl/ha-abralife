@@ -72,13 +72,16 @@ class AbraBinarySensor(AbraEntity, BinarySensorEntity):
     def __init__(self, coordinator: AbraCoordinator, device_id: str, description: AbraBinaryDescription) -> None:
         super().__init__(coordinator, device_id, description.key)
         self.entity_description = description
+        # A disconnected leak sensor must not claim "dry"
+        self._unavailable_when_offline = description.key == "leak"
 
     @property
-    def available(self) -> bool:
-        # The connectivity sensor must stay available to report "offline".
+    def extra_state_attributes(self) -> dict[str, str | None] | None:
         if self.entity_description.key == "online":
-            return self.coordinator.last_update_success and self._device_id in self.coordinator.data.devices
-        return super().available
+            return {"last_reported": self.device.last_reported}
+        if self.entity_description.key == "problem":
+            return {"fault": self.device.fault}
+        return None
 
     @property
     def is_on(self) -> bool | None:

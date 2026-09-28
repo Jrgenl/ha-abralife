@@ -38,6 +38,7 @@ class AbraValve(AbraEntity, ValveEntity):
     _attr_device_class = ValveDeviceClass.WATER
     _attr_reports_position = False
     _attr_name = None
+    _unavailable_when_offline = True
 
     def __init__(self, coordinator: AbraCoordinator, device_id: str, allow_open: bool) -> None:
         super().__init__(coordinator, device_id, "valve")
@@ -52,7 +53,9 @@ class AbraValve(AbraEntity, ValveEntity):
 
     async def _set(self, open_: bool) -> None:
         try:
-            await self.coordinator.client.set_valve(self._device_id, open_)
+            await self.coordinator.client.set_valve(
+                self._device_id, open_, use_open_percent=self.device.valve_uses_open_percent
+            )
         except AbraError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="valve_failed", translation_placeholders={"error": str(err)}

@@ -14,6 +14,10 @@ class AbraEntity(CoordinatorEntity[AbraCoordinator]):
     """Entity bound to one Abralife device."""
 
     _attr_has_entity_name = True
+    # Abra keeps the last reported values for disconnected devices. Readings
+    # such as temperature stay visible; states that would be unsafe to trust
+    # when stale (leak, valve) set this to True.
+    _unavailable_when_offline = False
 
     def __init__(self, coordinator: AbraCoordinator, device_id: str, key: str) -> None:
         super().__init__(coordinator)
@@ -40,7 +44,7 @@ class AbraEntity(CoordinatorEntity[AbraCoordinator]):
         return (
             super().available
             and self._device_id in self.coordinator.data.devices
-            and self.device.online is not False
+            and not (self._unavailable_when_offline and self.device.online is False)
         )
 
 

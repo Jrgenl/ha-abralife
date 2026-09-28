@@ -88,7 +88,9 @@ class AbraDevice:
     room: str | None = None
     via_hub: str | None = None
     online: bool | None = None
+    last_reported: str | None = None
     valve_open: bool | None = None
+    valve_uses_open_percent: bool = False
     leak: bool | None = None
     temperature: float | None = None
     humidity: float | None = None
@@ -121,7 +123,11 @@ def _attributes(obj: dict[str, Any]) -> dict[str, dict[str, Any]]:
     for trait in obj.get("traits") or []:
         for attr in (trait or {}).get("attributes") or []:
             if attr and attr.get("__typename"):
-                result.setdefault(attr["__typename"], attr)
+                known = result.get(attr["__typename"])
+                # Keep the first attribute with data; a bare {"__typename"}
+                # (fields not queried) is replaced by a later one with values.
+                if known is None or len(known) == 1:
+                    result[attr["__typename"]] = attr
     return result
 
 
@@ -148,10 +154,31 @@ def parse_device(data: dict[str, Any], hub_id: str | None = None, hub_room: str 
         kind = "other"
 
     alarm = attrs.get("TraitAttributeAlarm")
-    fault = (attrs.get("TraitAttributeFault") or {}).get("fault")
-    fault_text = None
-    if isinstance(fault, dict) and any(fault.values()):
-        fault_text = fault.get("name") or fault.get("code") or fault.get("description")
+    # The schema types fault as a list of statuses; accept a single object too.
+    faults = (attrs.get("TraitAttributeFault") or {}).get("fault") or []
+    if isinstance(faults, dict):
+        faults = [faults]
+    fault_text = ", ".join(
+        str(f.get("name") or f.get("code") or f.get("description")) for f in faults if isinstance(f, dict) and any(f.values())
+    ) or None
+
+    commands = {c for trait in data.get("traits") or [] for c in (trait or {}).get("commands") or []}
+    valve_open = None
+    if kind == "valve":
+        # Abra models an open valve as "unlocked" on some valves and as an open
+        # percentage on others (Waterguard+). Only read these on real valves so
+        # door locks are never exposed as water valves.
+        unlocked = (attrs.get("TraitAttributeIsUnlocked") or {}).get("isUnlocked")
+        percent = _num((attrs.get("TraitAttributeOpenPercent") or {}).get("openPercent"))
+        valve_open = unlocked if unlocked is not None else (percent > 0 if percent is not None else None)
+
+    power_source = (attrs.get("TraitAttributeCurrentPowerSource") or {}).get("currentPowerSource")
+    battery = _num((attrs.get("TraitAttributeCurrentPowerSourceLevel") or {}).get("currentPowerSourceLevel"))
+    if is_hub or power_source == "CONSTANT_POWER":
+        # Mains powered: the level describes a backup battery at best (the
+        # Linkbox reports 0 with no battery fitted); faults cover that case.
+        battery = None
+    connection = attrs.get("TraitAttributeIsConnected") or {}
 
     area = data.get("area") or {}
     return AbraDevice(
@@ -163,14 +190,14 @@ def parse_device(data: dict[str, Any], hub_id: str | None = None, hub_room: str 
         firmware=data.get("firmwareVersion"),
         room=area.get("areaName") or hub_room,
         via_hub=hub_id,
-        online=(attrs.get("TraitAttributeIsConnected") or {}).get("isConnected"),
-        # Abra models an open valve as "unlocked". Only trust it on real valves
-        # so door locks are never exposed as water valves.
-        valve_open=(attrs.get("TraitAttributeIsUnlocked") or {}).get("isUnlocked") if kind == "valve" else None,
+        online=connection.get("isConnected"),
+        last_reported=connection.get("reportedAt"),
+        valve_open=valve_open,
+        valve_uses_open_percent=kind == "valve" and "OPEN_PERCENT" in commands,
         leak=(alarm.get("alarm") == "WATER_LEAK") if alarm and kind == "water_sensor" else None,
         temperature=_num((attrs.get("TraitAttributeTemperature") or {}).get("temperature")),
         humidity=_num((attrs.get("TraitAttributeHumidity") or {}).get("humidity")),
-        battery=_num((attrs.get("TraitAttributeCurrentPowerSourceLevel") or {}).get("currentPowerSourceLevel")),
+        battery=battery,
         low_battery=(attrs.get("TraitAttributeLowBatteryWarning") or {}).get("lowBatteryWarning"),
         fault=fault_text,
         water_guard_mode=(data.get("waterGuard") or {}).get("mode"),
@@ -373,6 +400,8 @@ class AbraClient:
         home = next((h for h in data.get("homes") or [] if str(h.get("id")) == home_id), None)
         if home is None:
             raise AbraConnectionError(f"Home {home_id} is no longer available on this account")
+        _merge_extras(home, await self._extras(home_id))
+        errors += self.last_errors
         alarms_data = await self.graphql(queries.ALARMS_QUERY, {"homeId": home_id})
         self.poll_errors = errors + self.last_errors
         alarms = [
@@ -381,6 +410,33 @@ class AbraClient:
             if a and a.get("id")
         ]
         return AbraData(devices=parse_home(home), alarms=alarms)
+
+    async def _extras(self, home_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Device id -> extra attributes (valve position, power source)."""
+        try:
+            data = await self.graphql(queries.EXTRAS_QUERY)
+        except AbraAuthError:
+            raise
+        except AbraError as err:
+            _LOGGER.warning("Could not read valve position/power source: %s", err)
+            return {}
+        extras: dict[str, list[dict[str, Any]]] = {}
+        for home in data.get("homes") or []:
+            if not home or str(home.get("id")) != home_id:
+                continue
+            for hub in home.get("hubs") or []:
+                for dev in (hub or {}).get("devices") or []:
+                    if not dev or not dev.get("id"):
+                        continue
+                    attrs = [
+                        a
+                        for trait in dev.get("traits") or []
+                        for a in (trait or {}).get("attributes") or []
+                        if a and len(a) > 1  # skip bare {"__typename": ...}
+                    ]
+                    if attrs:
+                        extras[str(dev["id"])] = attrs
+        return extras
 
     async def diagnostics_dump(self, home_id: str) -> dict[str, Any]:
         """Every trait attribute Abra reports for the home, plus any API errors."""
@@ -391,13 +447,30 @@ class AbraClient:
         homes = [h for h in data.get("homes") or [] if h and str(h.get("id")) == home_id]
         return {"home": homes[0] if homes else None, "errors": self.last_errors}
 
-    async def set_valve(self, device_id: str, open_: bool) -> None:
-        data = await self.graphql(queries.SET_VALVE_MUTATION, {"deviceId": device_id, "open": open_})
-        _raise_payload_errors(data.get("deviceSetUnlocked"))
+    async def set_valve(self, device_id: str, open_: bool, *, use_open_percent: bool = False) -> None:
+        if use_open_percent:
+            data = await self.graphql(
+                queries.SET_OPEN_PERCENT_MUTATION, {"deviceId": device_id, "percent": 100.0 if open_ else 0.0}
+            )
+            _raise_payload_errors(data.get("deviceSetOpenPercent"))
+        else:
+            data = await self.graphql(queries.SET_VALVE_MUTATION, {"deviceId": device_id, "open": open_})
+            _raise_payload_errors(data.get("deviceSetUnlocked"))
 
     async def resolve_alarm(self, alarm_id: str) -> None:
         data = await self.graphql(queries.ALARM_RESOLVE_MUTATION, {"alarmId": alarm_id})
         _raise_payload_errors(data.get("alarmResolve"))
+
+
+def _merge_extras(home: dict[str, Any], extras: dict[str, list[dict[str, Any]]]) -> None:
+    """Attach extra attributes to the matching devices as their own trait."""
+    for hub in home.get("hubs") or []:
+        for dev in (hub or {}).get("devices") or []:
+            if dev and str(dev.get("id")) in extras:
+                dev["traits"] = [
+                    *(dev.get("traits") or []),
+                    {"traitType": "EXTRA", "commands": [], "attributes": extras[str(dev["id"])]},
+                ]
 
 
 def _raise_payload_errors(payload: dict[str, Any] | None) -> None:
