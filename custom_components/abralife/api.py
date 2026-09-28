@@ -62,99 +62,135 @@ class AbraHome:
 
 
 @dataclass
+class AbraAlarm:
+    """A home-level alarm record."""
+
+    id: str
+    kind: str  # GraphQL typename, e.g. "WaterAlarm"
+    state: str  # ALARM, SNOOZED or CLEARED
+    triggered_at: str | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.state in ("ALARM", "SNOOZED")
+
+
+@dataclass
 class AbraDevice:
-    """Normalised view of an Abralife device."""
+    """Normalised view of an Abralife device or Linkbox (hub)."""
 
     id: str
     name: str
     kind: str  # "valve", "water_sensor", "hub" or "other"
-    model: str | None = None
+    device_type: str | None = None
+    serial: str | None = None
+    firmware: str | None = None
     room: str | None = None
+    via_hub: str | None = None
     online: bool | None = None
     valve_open: bool | None = None
     leak: bool | None = None
     temperature: float | None = None
     humidity: float | None = None
     battery: float | None = None
+    low_battery: bool | None = None
+    fault: str | None = None
+    water_guard_mode: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 
-def _first(data: dict[str, Any], *keys: str) -> Any:
-    """Return the first non-None value for any of ``keys``."""
-    for key in keys:
-        if key in data and data[key] is not None:
-            return data[key]
-    return None
+@dataclass
+class AbraData:
+    """Everything the coordinator knows about one home."""
+
+    devices: dict[str, AbraDevice]
+    alarms: list[AbraAlarm]
+
+    @property
+    def water_alarm(self) -> bool:
+        return any(a.active for a in self.alarms if a.kind == "WaterAlarm")
 
 
-def _as_bool(value: Any, true_words: tuple[str, ...]) -> bool | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value != 0
-    return str(value).strip().lower() in true_words
+_VALVE_TYPES = {"WATER_VALVE"}
+_WATER_SENSOR_TYPES = {"WATER_LEAK_DETECTOR", "WATER_SENSOR_TAPE"}
 
 
-def _as_float(value: Any) -> float | None:
+def _attributes(obj: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Map attribute typename -> first attribute of that type across all traits."""
+    result: dict[str, dict[str, Any]] = {}
+    for trait in obj.get("traits") or []:
+        for attr in (trait or {}).get("attributes") or []:
+            if attr and attr.get("__typename"):
+                result.setdefault(attr["__typename"], attr)
+    return result
+
+
+def _num(value: Any) -> float | None:
     try:
         return None if value is None else float(value)
     except (TypeError, ValueError):
         return None
 
 
-def parse_device(data: dict[str, Any]) -> AbraDevice:
-    """Turn a GraphQL device object into an :class:`AbraDevice`."""
-    state = data.get("state") or {}
-    if isinstance(state, str):  # AWSJSON scalars arrive as strings
-        try:
-            state = json.loads(state)
-        except ValueError:
-            state = {"value": state}
-    if not isinstance(state, dict):
-        state = {"value": state}
-    merged = {**state, **{k: v for k, v in data.items() if k != "state"}}
+def parse_device(data: dict[str, Any], hub_id: str | None = None, hub_room: str | None = None) -> AbraDevice:
+    """Turn a GraphQL Device or Hub object into an :class:`AbraDevice`."""
+    attrs = _attributes(data)
+    is_hub = "waterGuard" in data
+    device_type = data.get("deviceType")
 
-    dev_type = str(_first(merged, "type", "deviceType", "category") or "").lower()
-    model = _first(merged, "model", "productName", "product")
-
-    valve_raw = _first(merged, "valveOpen", "isOpen", "open", "valveState", "valve")
-    valve_open = _as_bool(valve_raw, ("open", "opened", "on", "true", "1"))
-
-    leak = _as_bool(
-        _first(merged, "leak", "leakDetected", "waterDetected", "water", "alarm", "wet"),
-        ("true", "1", "wet", "leak", "alarm", "detected", "on"),
-    )
-
-    if "valve" in dev_type or valve_raw is not None:
-        kind = "valve"
-    elif any(word in dev_type for word in ("water", "leak", "moisture", "sensor")) or leak is not None:
-        kind = "water_sensor"
-    elif any(word in dev_type for word in ("linkbox", "hub", "gateway", "adapter")):
+    if is_hub:
         kind = "hub"
+    elif device_type in _VALVE_TYPES:
+        kind = "valve"
+    elif device_type in _WATER_SENSOR_TYPES:
+        kind = "water_sensor"
     else:
         kind = "other"
 
-    room = merged.get("room")
-    if isinstance(room, dict):
-        room = room.get("name")
+    alarm = attrs.get("TraitAttributeAlarm")
+    fault = (attrs.get("TraitAttributeFault") or {}).get("fault")
+    fault_text = None
+    if isinstance(fault, dict) and any(fault.values()):
+        fault_text = fault.get("name") or fault.get("code") or fault.get("description")
 
-    online_raw = _first(merged, "online", "connected", "isOnline", "reachable")
+    area = data.get("area") or {}
     return AbraDevice(
-        id=str(merged["id"]),
-        name=str(_first(merged, "name", "label") or model or merged["id"]),
+        id=str(data["id"]),
+        name=data.get("name") or ("Linkbox" if is_hub else str(device_type or data["id"]).replace("_", " ").title()),
         kind=kind,
-        model=str(model) if model else None,
-        room=room,
-        online=_as_bool(online_raw, ("true", "1", "online", "connected")),
-        valve_open=valve_open,
-        leak=leak,
-        temperature=_as_float(_first(merged, "temperature", "temp")),
-        humidity=_as_float(_first(merged, "humidity", "relativeHumidity")),
-        battery=_as_float(_first(merged, "battery", "batteryLevel", "batteryPercent")),
+        device_type=data.get("productType") if is_hub else device_type,
+        serial=data.get("serialNumber"),
+        firmware=data.get("firmwareVersion"),
+        room=area.get("areaName") or hub_room,
+        via_hub=hub_id,
+        online=(attrs.get("TraitAttributeIsConnected") or {}).get("isConnected"),
+        # Abra models an open valve as "unlocked". Only trust it on real valves
+        # so door locks are never exposed as water valves.
+        valve_open=(attrs.get("TraitAttributeIsUnlocked") or {}).get("isUnlocked") if kind == "valve" else None,
+        leak=(alarm.get("alarm") == "WATER_LEAK") if alarm and kind == "water_sensor" else None,
+        temperature=_num((attrs.get("TraitAttributeTemperature") or {}).get("temperature")),
+        humidity=_num((attrs.get("TraitAttributeHumidity") or {}).get("humidity")),
+        battery=_num((attrs.get("TraitAttributeCurrentPowerSourceLevel") or {}).get("currentPowerSourceLevel")),
+        low_battery=(attrs.get("TraitAttributeLowBatteryWarning") or {}).get("lowBatteryWarning"),
+        fault=fault_text,
+        water_guard_mode=(data.get("waterGuard") or {}).get("mode"),
         raw=data,
     )
+
+
+def parse_home(home: dict[str, Any]) -> dict[str, AbraDevice]:
+    """Flatten hubs and their devices for one home."""
+    devices: dict[str, AbraDevice] = {}
+    for hub in home.get("hubs") or []:
+        if not hub or not hub.get("id"):
+            continue
+        hub_dev = parse_device(hub)
+        devices[hub_dev.id] = hub_dev
+        for dev in hub.get("devices") or []:
+            if dev and dev.get("id"):
+                parsed = parse_device(dev, hub_id=hub_dev.id, hub_room=hub_dev.room)
+                devices[parsed.id] = parsed
+    return devices
 
 
 class AbraClient:
@@ -178,7 +214,8 @@ class AbraClient:
         self._tokens: AbraTokens | None = None
         self._refresh_token = refresh_token
         self._lock = asyncio.Lock()
-        self._use_id_token = False
+        # Abra's own example app authorises AppSync with the ID token.
+        self._use_id_token = True
 
     @property
     def refresh_token(self) -> str | None:
@@ -294,7 +331,7 @@ class AbraClient:
                 raise AbraConnectionError(str(err)) from err
 
             if status == 401 and attempt == 0:
-                # AppSync may be configured for ID tokens instead of access tokens.
+                # Fall back to the other Cognito token type once.
                 self._use_id_token = not self._use_id_token
                 continue
             break
@@ -314,17 +351,39 @@ class AbraClient:
 
     # ------------------------------------------------------------ high level
     async def get_homes(self) -> list[AbraHome]:
-        data = await self.graphql(queries.HOMES_QUERY)
-        return [AbraHome(id=str(h["id"]), name=h.get("name") or str(h["id"])) for h in data.get("homes") or []]
+        data = await self.graphql(queries.HOME_IDS_QUERY)
+        return [
+            AbraHome(id=str(h["id"]), name=(h.get("homeInfo") or {}).get("nickname") or str(h["id"]))
+            for h in data.get("homes") or []
+        ]
 
-    async def get_devices(self, home_id: str) -> dict[str, AbraDevice]:
-        data = await self.graphql(queries.DEVICES_QUERY, {"homeId": home_id})
-        home = data.get("home") or {}
-        devices = [parse_device(d) for d in home.get("devices") or [] if d and d.get("id")]
-        return {d.id: d for d in devices}
+    async def get_data(self, home_id: str) -> AbraData:
+        """Fetch all hubs, devices and alarms for one home."""
+        data = await self.graphql(queries.HOMES_QUERY)
+        home = next((h for h in data.get("homes") or [] if str(h.get("id")) == home_id), None)
+        if home is None:
+            raise AbraConnectionError(f"Home {home_id} is no longer available on this account")
+        alarms_data = await self.graphql(queries.ALARMS_QUERY, {"homeId": home_id})
+        alarms = [
+            AbraAlarm(id=str(a["id"]), kind=a["__typename"], state=a.get("state") or "", triggered_at=a.get("triggeredAt"))
+            for a in ((alarms_data.get("alarms") or {}).get("alarms") or [])
+            if a and a.get("id")
+        ]
+        return AbraData(devices=parse_home(home), alarms=alarms)
 
     async def set_valve(self, device_id: str, open_: bool) -> None:
-        await self.graphql(queries.SET_VALVE_MUTATION, {"deviceId": device_id, "open": open_})
+        data = await self.graphql(queries.SET_VALVE_MUTATION, {"deviceId": device_id, "open": open_})
+        _raise_payload_errors(data.get("deviceSetUnlocked"))
 
-    async def introspect(self) -> dict[str, Any]:
-        return await self.graphql(queries.INTROSPECTION_QUERY)
+    async def resolve_alarm(self, alarm_id: str) -> None:
+        data = await self.graphql(queries.ALARM_RESOLVE_MUTATION, {"alarmId": alarm_id})
+        _raise_payload_errors(data.get("alarmResolve"))
+
+
+def _raise_payload_errors(payload: dict[str, Any] | None) -> None:
+    """Abra mutations report business errors in an ``errors`` list."""
+    if payload is None:
+        raise AbraConnectionError("Empty response from Abralife")
+    errors = [e for e in payload.get("errors") or [] if e]
+    if errors:
+        raise AbraError("; ".join(e.get("message") or e.get("__typename", "error") for e in errors))

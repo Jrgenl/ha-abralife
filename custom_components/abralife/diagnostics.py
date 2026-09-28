@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from .const import CONF_REFRESH_TOKEN
 from .coordinator import AbraConfigEntry
 
-TO_REDACT = {CONF_REFRESH_TOKEN, CONF_USERNAME, "email", "phone", "address", "serialNumber"}
+TO_REDACT = {CONF_REFRESH_TOKEN, CONF_USERNAME, "email", "serial", "serialNumber", "macAddress"}
 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: AbraConfigEntry) -> dict[str, Any]:
@@ -20,5 +20,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: AbraCon
     return {
         "entry": async_redact_data(dict(entry.data), TO_REDACT),
         "options": dict(entry.options),
-        "devices": [async_redact_data(asdict(d), TO_REDACT) for d in coordinator.data.values()],
+        "devices": [async_redact_data(asdict(d), TO_REDACT) for d in coordinator.data.devices.values()],
+        "alarms": [asdict(a) for a in coordinator.data.alarms],
     }

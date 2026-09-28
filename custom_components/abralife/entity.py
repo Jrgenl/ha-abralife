@@ -24,18 +24,37 @@ class AbraEntity(CoordinatorEntity[AbraCoordinator]):
             identifiers={(DOMAIN, device_id)},
             name=device.name,
             manufacturer="Abra / Waterguard",
-            model=device.model,
+            model=(device.device_type or "").replace("_", " ").title() or None,
+            serial_number=device.serial,
+            sw_version=device.firmware,
             suggested_area=device.room,
+            via_device=(DOMAIN, device.via_hub) if device.via_hub else (DOMAIN, coordinator.home_id),
         )
 
     @property
     def device(self) -> AbraDevice:
-        return self.coordinator.data[self._device_id]
+        return self.coordinator.data.devices[self._device_id]
 
     @property
     def available(self) -> bool:
         return (
             super().available
-            and self._device_id in self.coordinator.data
+            and self._device_id in self.coordinator.data.devices
             and self.device.online is not False
+        )
+
+
+class AbraHomeEntity(CoordinatorEntity[AbraCoordinator]):
+    """Entity for the home itself (home-level alarms)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: AbraCoordinator, key: str) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.home_id}_{key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, coordinator.home_id)},
+            name=coordinator.config_entry.title,
+            manufacturer="Abra / Waterguard",
+            model="Abralife-hjem",
         )

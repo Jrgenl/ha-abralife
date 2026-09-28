@@ -5,17 +5,19 @@ Abralife-skyen. Installeres med HACS og settes opp med en veiviser: du skriver
 bare inn e-post og passord fra Abralife-appen.
 
 > Status: **beta**. Integrasjonen bruker Abras offisielle GraphQL-API
-> ([developer.abralife.com](https://developer.abralife.com/)). Spørringene i
-> `queries.py` må verifiseres mot det offisielle skjemaet før 1.0.
+> ([developer.abralife.com](https://developer.abralife.com/)), og alle
+> spørringer er validert mot det offisielle skjemaet. Si gjerne fra i Issues om
+> hvordan det fungerer med ditt anlegg.
 
 ## Hva du får
 
 | Enhet | Entitet i Home Assistant |
 |---|---|
-| Linkbox+ / vannventil | `valve` – vis status og steng vannet (åpning kan slås på, se under) |
-| WaterSensor+ / sensortape | `binary_sensor` (fukt/lekkasje) |
-| WaterSensor+ | `sensor` for temperatur, luftfuktighet og batteri |
-| Alle enheter | `binary_sensor` for tilkobling (diagnostikk) |
+| Vannventil | `valve`: status og stenging av vannet (åpning kan slås på, se under) |
+| Hjemmet | `binary_sensor` **Vannalarm** (Abras egen alarm) og knappen **Kvitter vannalarm** |
+| Linkbox+ | `sensor` **Waterguard-modus** (normal, overstyrt, sabotert …) |
+| WaterSensor+ / sensortape | `binary_sensor` for lekkasje, `sensor` for temperatur, luftfuktighet og batteri |
+| Alle enheter | tilkobling, lavt batteri og feil (diagnostikk) |
 
 **Sikkerhet:**
 - Passordet ditt lagres aldri. Det brukes én gang til å hente en
@@ -25,6 +27,8 @@ bare inn e-post og passord fra Abralife-appen.
   slått av som standard, i tråd med Abras anbefaling om at gjenåpning skal være
   en bevisst handling etter at lekkasjen er utbedret. Du kan slå det på under
   *Innstillinger → Enheter og tjenester → Abralife → Konfigurer*.
+- Å **kvittere** en vannalarm åpner aldri vannet. Det er to separate handlinger,
+  slik Abra også gjør det.
 
 ## Installasjon (HACS)
 
@@ -51,7 +55,7 @@ automation:
     triggers:
       - trigger: state
         entity_id:
-          - binary_sensor.kjokken_lekkasje
+          - binary_sensor.hjemme_vannalarm
         to: "on"
     actions:
       - action: valve.close_valve
@@ -60,16 +64,17 @@ automation:
       - action: notify.notify
         data:
           title: "💧 Vannlekkasje!"
-          message: "Lekkasje oppdaget på {{ trigger.to_state.name }}. Vannet er stengt."
+          message: "Vannalarm fra Waterguard. Vannet er stengt."
 ```
 
 ## For utviklere / feilsøking
 
-- All GraphQL ligger i `custom_components/abralife/queries.py`. Tilkoblingsverdier
-  (region, Cognito user pool, client ID, AppSync-URL) ligger i `const.py`. Når de
-  er fylt ut der, ser brukerne bare e-post og passord i veiviseren.
-- `tools/abra_probe.py` logger inn fra egen PC og lagrer skjema og rådata for
-  enhetene i `abra_schema.json` og `abra_devices.json`.
+- All GraphQL ligger i `custom_components/abralife/queries.py`, basert på
+  `schema.graphql` og Abra Connect SDK 0.2.0 fra developer.abralife.com.
+  Tilkoblingsverdiene (region, Cognito user pool, client-ID og AppSync-URL) er
+  Abras offentlige verdier og ligger i `const.py`.
+- `tools/abra_probe.py` logger inn fra egen PC og viser hva integrasjonen ser
+  (lagres i `abra_devices.json`).
 - Under *Enheter og tjenester → Abralife → ⋮ → Last ned diagnostikk* får du rådata
   fra enhetene (tokens og e-post er fjernet).
 - Tester: `pip install pytest-homeassistant-custom-component pycognito && pytest`.

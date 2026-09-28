@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Log in to Abralife and dump the GraphQL schema and raw device data.
+"""Log in to Abralife and dump what the integration sees.
 
-Run this on your own PC to find the right queries for the integration:
+Useful for checking a new device type without Home Assistant:
 
     pip install aiohttp pycognito
-    python tools/abra_probe.py --user you@example.com \
-        --user-pool-id eu-west-1_XXXX --client-id XXXX \
-        --api-url https://XXXX.appsync-api.eu-west-1.amazonaws.com/graphql
+    python tools/abra_probe.py --user you@example.com
 
-Writes abra_schema.json and abra_devices.json. The password is asked for
-interactively and is not saved. Check the files before sharing them.
+Writes abra_devices.json. The password is asked for interactively and is not
+saved. The file contains serial numbers, so check it before sharing.
 """
 
 from __future__ import annotations
@@ -61,14 +59,17 @@ async def main() -> int:
         try:
             await client.login(args.user, password)
             print("Login OK")
-            try:
-                Path("abra_schema.json").write_text(json.dumps(await client.introspect(), indent=2))
-                print("Wrote abra_schema.json")
-            except AbraError as err:
-                print(f"Introspection failed ({err}); copy the schema from developer.abralife.com instead")
             homes = await client.get_homes()
             print("Homes:", [(h.id, h.name) for h in homes])
-            dump = {h.id: [asdict(d) for d in (await client.get_devices(h.id)).values()] for h in homes}
+            dump = {}
+            for home in homes:
+                data = await client.get_data(home.id)
+                dump[home.id] = {
+                    "devices": [asdict(d) for d in data.devices.values()],
+                    "alarms": [asdict(a) for a in data.alarms],
+                }
+                for dev in data.devices.values():
+                    print(f"  {dev.kind:12} {dev.device_type or '':22} {dev.name}")
             Path("abra_devices.json").write_text(json.dumps(dump, indent=2, default=str))
             print("Wrote abra_devices.json")
         except AbraError as err:

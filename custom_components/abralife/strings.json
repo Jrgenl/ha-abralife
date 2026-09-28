@@ -76,6 +76,27 @@
       },
       "online": {
         "name": "Connection"
+      },
+      "water_alarm": {
+        "name": "Water alarm"
+      }
+    },
+    "button": {
+      "resolve_water_alarm": {
+        "name": "Resolve water alarm"
+      }
+    },
+    "sensor": {
+      "water_guard_mode": {
+        "name": "Waterguard mode",
+        "state": {
+          "normal": "Normal",
+          "no_valve": "No valve",
+          "overridden": "Overridden",
+          "restored": "Restored",
+          "tamper_warning": "Tamper warning",
+          "tampered": "Tampered"
+        }
       }
     }
   },
@@ -85,6 +106,12 @@
     },
     "open_disabled": {
       "message": "Opening the water from Home Assistant is disabled in the integration options."
+    },
+    "no_active_alarm": {
+      "message": "There is no active water alarm to resolve."
+    },
+    "alarm_failed": {
+      "message": "Could not resolve the alarm: {error}"
     }
   }
 }

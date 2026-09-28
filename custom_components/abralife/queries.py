@@ -1,67 +1,99 @@
 """GraphQL documents used against the Abralife API.
 
-All GraphQL lives in this one file so it can be aligned with the official
-schema on https://developer.abralife.com/apis/schema without touching the rest
-of the integration. Run ``tools/abra_probe.py`` to dump the live schema.
-
-The parser in ``api.py`` is deliberately tolerant about field names, so small
-naming differences only need to be fixed here.
+Based on the official schema and the Abra Connect SDK 0.2.0 published on
+https://developer.abralife.com/ (``/schema.graphql``).
 """
 
 from __future__ import annotations
 
-HOMES_QUERY = """
-query AbraHomes {
+_DEVICE_ATTRIBUTES = """
+  attributes {
+    __typename
+    ... on TraitAttributeIsConnected { isConnected reportedAt }
+    ... on TraitAttributeIsUnlocked { isUnlocked }
+    ... on TraitAttributeAlarm { alarm snoozed }
+    ... on TraitAttributeTemperature { temperature }
+    ... on TraitAttributeHumidity { humidity }
+    ... on TraitAttributeCurrentPowerSourceLevel { currentPowerSourceLevel }
+    ... on TraitAttributeLowBatteryWarning { lowBatteryWarning }
+    ... on TraitAttributeWaterValvesConnected { waterValvesConnected }
+    ... on TraitAttributeFault { fault { code name description } }
+  }
+"""
+
+HOMES_QUERY = f"""
+query AbraHomes {{
+  homes {{
+    id
+    homeInfo {{ nickname }}
+    hubs {{
+      id
+      name
+      serialNumber
+      firmwareVersion
+      productType
+      area {{ areaName }}
+      waterGuard {{ mode showLevel1Warning showLevel2Warning }}
+      traits {{ traitType commands {_DEVICE_ATTRIBUTES} }}
+      devices {{
+        id
+        deviceType
+        name
+        serialNumber
+        firmwareVersion
+        area {{ areaName }}
+        traits {{ traitType commands {_DEVICE_ATTRIBUTES} }}
+      }}
+    }}
+  }}
+}}
+"""
+
+HOME_IDS_QUERY = """
+query AbraHomeIds {
   homes {
     id
-    name
+    homeInfo { nickname }
   }
 }
 """
 
-DEVICES_QUERY = """
-query AbraDevices($homeId: ID!) {
-  home(id: $homeId) {
-    id
-    name
-    devices {
-      id
-      name
-      type
-      model
-      online
-      room { name }
-      state
+ALARMS_QUERY = """
+query AbraAlarms($homeId: ID!) {
+  alarms(homeId: $homeId) {
+    alarms {
+      __typename
+      ... on WaterAlarm { id state triggeredAt }
+      ... on FireAlarm { id state triggeredAt }
+      ... on SecurityAlarm { id state triggeredAt }
     }
   }
 }
 """
 
+# Abra models the water valve as "unlocked" = open (see SDK setValveOpen).
 SET_VALVE_MUTATION = """
 mutation AbraSetValve($deviceId: ID!, $open: Boolean!) {
-  setValveState(deviceId: $deviceId, open: $open) {
-    id
-    state
+  deviceSetUnlocked(deviceId: $deviceId, isUnlocked: $open, commandSource: CUSTOMER) {
+    command { commandState commandType }
+    errors {
+      __typename
+      ... on DeviceDoesNotExistError { message }
+      ... on TraitNotSupportedForDeviceError { message }
+      ... on TraitUpdateFailedError { message }
+    }
   }
 }
 """
 
-INTROSPECTION_QUERY = """
-query IntrospectionQuery {
-  __schema {
-    queryType { name }
-    mutationType { name }
-    subscriptionType { name }
-    types {
-      kind
-      name
-      fields(includeDeprecated: true) {
-        name
-        args { name type { kind name ofType { kind name ofType { kind name } } } }
-        type { kind name ofType { kind name ofType { kind name ofType { kind name } } } }
-      }
-      inputFields { name type { kind name ofType { kind name ofType { kind name } } } }
-      enumValues(includeDeprecated: true) { name }
+# Resolving a water alarm never opens the valve.
+ALARM_RESOLVE_MUTATION = """
+mutation AbraAlarmResolve($alarmId: ID!) {
+  alarmResolve(alarmId: $alarmId) {
+    alarmId
+    errors {
+      __typename
+      ... on AlarmDoesNotExistError { message }
     }
   }
 }

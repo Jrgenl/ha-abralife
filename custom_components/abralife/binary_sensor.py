@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import AbraDevice
 from .coordinator import AbraConfigEntry, AbraCoordinator
-from .entity import AbraEntity
+from .entity import AbraEntity, AbraHomeEntity
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -32,6 +32,18 @@ DESCRIPTIONS: tuple[AbraBinaryDescription, ...] = (
         value_fn=lambda d: d.leak,
     ),
     AbraBinaryDescription(
+        key="low_battery",
+        device_class=BinarySensorDeviceClass.BATTERY,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.low_battery,
+    ),
+    AbraBinaryDescription(
+        key="problem",
+        device_class=BinarySensorDeviceClass.PROBLEM,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: None if d.kind == "other" else d.fault is not None,
+    ),
+    AbraBinaryDescription(
         key="online",
         translation_key="online",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
@@ -45,9 +57,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: AbraConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     coordinator = entry.runtime_data
+    async_add_entities([AbraWaterAlarm(coordinator)])
     async_add_entities(
         AbraBinarySensor(coordinator, dev.id, desc)
-        for dev in coordinator.data.values()
+        for dev in coordinator.data.devices.values()
         for desc in DESCRIPTIONS
         if desc.value_fn(dev) is not None
     )
@@ -64,9 +77,31 @@ class AbraBinarySensor(AbraEntity, BinarySensorEntity):
     def available(self) -> bool:
         # The connectivity sensor must stay available to report "offline".
         if self.entity_description.key == "online":
-            return self.coordinator.last_update_success and self._device_id in self.coordinator.data
+            return self.coordinator.last_update_success and self._device_id in self.coordinator.data.devices
         return super().available
 
     @property
     def is_on(self) -> bool | None:
         return self.entity_description.value_fn(self.device)
+
+
+class AbraWaterAlarm(AbraHomeEntity, BinarySensorEntity):
+    """Home-level water alarm, as recorded by Abra (authoritative source)."""
+
+    _attr_device_class = BinarySensorDeviceClass.MOISTURE
+    _attr_translation_key = "water_alarm"
+
+    def __init__(self, coordinator: AbraCoordinator) -> None:
+        super().__init__(coordinator, "water_alarm")
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.data.water_alarm
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        active = [a for a in self.coordinator.data.alarms if a.kind == "WaterAlarm" and a.active]
+        return {
+            "state": active[0].state if active else None,
+            "triggered_at": active[0].triggered_at if active else None,
+        }

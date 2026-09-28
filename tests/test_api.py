@@ -1,59 +1,107 @@
-"""Tests for the device parser."""
+"""Tests for the API client and parser."""
 
-from custom_components.abralife.api import parse_device
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from .conftest import RAW_DEVICES
+from custom_components.abralife.api import AbraClient, AbraError, parse_home
 
+from .conftest import RAW_HOME
 
-def test_parse_valve() -> None:
-    dev = parse_device(RAW_DEVICES[0])
-    assert dev.kind == "valve"
-    assert dev.valve_open is True
-    assert dev.room == "Teknisk rom"
-
-
-def test_parse_sensor() -> None:
-    dev = parse_device(RAW_DEVICES[1])
-    assert dev.kind == "water_sensor"
-    assert dev.leak is False
-    assert (dev.temperature, dev.humidity, dev.battery) == (21.5, 40.0, 88.0)
+API = "https://x.appsync-api.eu-west-1.amazonaws.com/graphql"
+COGNITO = "https://cognito-idp.eu-west-1.amazonaws.com/"
 
 
-def test_parse_string_states() -> None:
-    dev = parse_device({"id": 5, "type": "valve", "state": {"valveState": "CLOSED"}})
-    assert dev.valve_open is False
-    assert dev.name == "5"
-    assert parse_device({"id": "x", "state": {"waterDetected": "WET"}}).leak is True
+def test_parse_home() -> None:
+    devices = parse_home(RAW_HOME)
+    hub, valve, sensor, lock = devices["hub1"], devices["v1"], devices["s1"], devices["lock1"]
+
+    assert (hub.kind, hub.water_guard_mode, hub.online) == ("hub", "NORMAL", True)
+    assert (valve.kind, valve.valve_open, valve.via_hub) == ("valve", True, "hub1")
+    assert valve.room == "Teknisk rom"  # inherited from the Linkbox
+    assert sensor.kind == "water_sensor"
+    assert sensor.leak is False
+    assert (sensor.temperature, sensor.humidity, sensor.battery) == (21.5, 40.0, 88.0)
+    assert sensor.fault is None
+    # A door lock also uses isUnlocked but must never become a water valve
+    assert (lock.kind, lock.valve_open) == ("other", None)
 
 
-async def test_refresh_and_graphql(hass, aioclient_mock) -> None:
-    """Refresh token -> access token -> GraphQL, falling back to the ID token on 401."""
-    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+def test_parse_leak_and_fault() -> None:
+    sensor = {
+        "id": "s2",
+        "deviceType": "WATER_SENSOR_TAPE",
+        "traits": [
+            {"attributes": [
+                {"__typename": "TraitAttributeAlarm", "alarm": "WATER_LEAK"},
+                {"__typename": "TraitAttributeFault", "fault": {"code": "E12", "name": "Cable cut", "description": None}},
+            ]}
+        ],
+    }
+    dev = parse_home({"hubs": [{"id": "h", "waterGuard": {"mode": "TAMPERED"}, "devices": [sensor]}]})["s2"]
+    assert dev.leak is True
+    assert dev.fault == "Cable cut"
+    assert dev.name == "Water Sensor Tape"
 
-    from custom_components.abralife.api import AbraClient
 
+def _cognito(aioclient_mock: AiohttpClientMocker) -> None:
     aioclient_mock.post(
-        "https://cognito-idp.eu-west-1.amazonaws.com/",
-        json={"AuthenticationResult": {"AccessToken": "acc", "IdToken": "idt", "ExpiresIn": 3600}},
+        COGNITO, json={"AuthenticationResult": {"AccessToken": "acc", "IdToken": "idt", "ExpiresIn": 3600}}
     )
-    calls: list[str] = []
-    api = "https://x.appsync-api.eu-west-1.amazonaws.com/graphql"
+
+
+def _client(hass: HomeAssistant) -> AbraClient:
+    return AbraClient(
+        async_get_clientsession(hass), region="eu-west-1", user_pool_id="p", client_id="c", api_url=API,
+        refresh_token="rt",
+    )
+
+
+async def test_refresh_and_get_data(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    """Refresh token -> ID token -> GraphQL, falling back to the access token on 401."""
+    from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMockResponse
+
+    _cognito(aioclient_mock)
+    responses = [
+        (401, {"errors": [{"message": "Unauthorized"}]}),
+        (200, {"data": {"homes": [RAW_HOME]}}),
+        (200, {"data": {"alarms": {"alarms": [
+            {"__typename": "WaterAlarm", "id": "a1", "state": "ALARM", "triggeredAt": "2026-09-28T06:00:00Z"},
+            {"__typename": "FireAlarm", "id": "a2", "state": "CLEARED", "triggeredAt": None},
+        ]}}}),
+    ]
 
     async def graphql(method, url, data):
-        calls.append("x")
-        from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMockResponse
+        status, body = responses.pop(0)
+        return AiohttpClientMockResponse(method, url, status=status, json=body)
 
-        if len(calls) == 1:
-            return AiohttpClientMockResponse(method, url, status=401, json={"errors": [{"message": "Unauthorized"}]})
-        return AiohttpClientMockResponse(
-            method, url, json={"data": {"home": {"devices": [RAW_DEVICES[0]]}}}
-        )
+    aioclient_mock.post(API, side_effect=graphql)
+    client = _client(hass)
+    data = await client.get_data("h1")
 
-    aioclient_mock.post(api, side_effect=graphql)
-    client = AbraClient(async_get_clientsession(hass), region="eu-west-1", user_pool_id="p",
-                        client_id="c", api_url=api, refresh_token="rt")
-    devices = await client.get_devices("h1")
-    assert devices["v1"].valve_open is True
+    assert data.devices["v1"].valve_open is True
+    assert data.water_alarm is True
     assert client.refresh_token == "rt"  # no rotation returned -> keep old
-    headers = [c[3] for c in aioclient_mock.mock_calls if str(c[1]) == api]
-    assert [h["Authorization"] for h in headers] == ["acc", "idt"]
+    auth = [c[3]["Authorization"] for c in aioclient_mock.mock_calls if str(c[1]) == API]
+    assert auth == ["idt", "acc", "acc"]
+
+
+async def test_set_valve_uses_unlock_mutation(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    _cognito(aioclient_mock)
+    aioclient_mock.post(API, json={"data": {"deviceSetUnlocked": {"command": {}, "errors": []}}})
+    await _client(hass).set_valve("v1", False)
+    body = [c[2] for c in aioclient_mock.mock_calls if str(c[1]) == API][0]
+    assert "deviceSetUnlocked" in body["query"]
+    assert body["variables"] == {"deviceId": "v1", "open": False}
+
+
+async def test_mutation_errors_raise(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
+    _cognito(aioclient_mock)
+    aioclient_mock.post(API, json={"data": {"deviceSetUnlocked": {"errors": [
+        {"__typename": "TraitUpdateFailedError", "message": "Valve did not respond"}]}}})
+    try:
+        await _client(hass).set_valve("v1", True)
+    except AbraError as err:
+        assert "Valve did not respond" in str(err)
+    else:
+        raise AssertionError("expected AbraError")

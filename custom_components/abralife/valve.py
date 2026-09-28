@@ -22,7 +22,7 @@ async def async_setup_entry(
     allow_open = entry.options.get(CONF_ALLOW_OPEN, False)
     async_add_entities(
         AbraValve(coordinator, dev.id, allow_open)
-        for dev in coordinator.data.values()
+        for dev in coordinator.data.devices.values()
         if dev.kind == "valve"
     )
 

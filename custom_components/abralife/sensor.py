@@ -22,7 +22,7 @@ from .entity import AbraEntity
 
 @dataclass(frozen=True, kw_only=True)
 class AbraSensorDescription(SensorEntityDescription):
-    value_fn: Callable[[AbraDevice], float | None]
+    value_fn: Callable[[AbraDevice], float | str | None]
 
 
 DESCRIPTIONS: tuple[AbraSensorDescription, ...] = (
@@ -41,6 +41,13 @@ DESCRIPTIONS: tuple[AbraSensorDescription, ...] = (
         value_fn=lambda d: d.humidity,
     ),
     AbraSensorDescription(
+        key="water_guard_mode",
+        translation_key="water_guard_mode",
+        device_class=SensorDeviceClass.ENUM,
+        options=["normal", "no_valve", "overridden", "restored", "tamper_warning", "tampered"],
+        value_fn=lambda d: d.water_guard_mode.lower() if d.water_guard_mode else None,
+    ),
+    AbraSensorDescription(
         key="battery",
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
@@ -57,7 +64,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities(
         AbraSensor(coordinator, dev.id, desc)
-        for dev in coordinator.data.values()
+        for dev in coordinator.data.devices.values()
         for desc in DESCRIPTIONS
         if desc.value_fn(dev) is not None
     )
@@ -71,5 +78,5 @@ class AbraSensor(AbraEntity, SensorEntity):
         self.entity_description = description
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | str | None:
         return self.entity_description.value_fn(self.device)

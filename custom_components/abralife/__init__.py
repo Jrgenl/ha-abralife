@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import AbraClient
-from .const import CONF_API_URL, CONF_CLIENT_ID, CONF_REFRESH_TOKEN, CONF_REGION, CONF_USER_POOL_ID
+from .const import DOMAIN, CONF_API_URL, CONF_CLIENT_ID, CONF_REFRESH_TOKEN, CONF_REGION, CONF_USER_POOL_ID
 from .coordinator import AbraConfigEntry, AbraCoordinator
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.VALVE]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR, Platform.VALVE]
 
 
 def build_client(hass: HomeAssistant, data: dict) -> AbraClient:
@@ -30,6 +31,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: AbraConfigEntry) -> bool
     coordinator = AbraCoordinator(hass, entry, build_client(hass, dict(entry.data)))
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    # Register the home and its Linkbox hubs first so devices can point at
+    # them with via_device, regardless of platform load order.
+    registry = dr.async_get(hass)
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, coordinator.home_id)},
+        name=entry.title,
+        manufacturer="Abra / Waterguard",
+        model="Abralife-hjem",
+    )
+    for hub in coordinator.data.devices.values():
+        if hub.kind == "hub":
+            registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, hub.id)},
+                name=hub.name,
+                manufacturer="Abra / Waterguard",
+                via_device=(DOMAIN, coordinator.home_id),
+            )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     options = dict(entry.options)
 

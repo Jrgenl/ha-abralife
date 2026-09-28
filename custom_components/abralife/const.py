@@ -25,11 +25,11 @@ MIN_SCAN_INTERVAL: Final = 15
 UPDATE_INTERVAL: Final = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
 
 # Public connection settings for the Abralife cloud (AWS AppSync + Cognito).
-# These values are public (they ship in every Abralife web/app build) and are
-# documented on https://developer.abralife.com/. Fill them in here once so that
-# end users only have to type e-mail and password in the setup wizard. While a
-# value is empty the wizard asks for it under "Avanserte API-innstillinger".
+# Abra documents these as public configuration, not credentials: they ship in
+# every Abralife browser build, e.g. the example app on
+# https://developer.abralife.com/app. They can be overridden in the setup
+# wizard under "Avanserte API-innstillinger".
 DEFAULT_REGION: Final = "eu-west-1"
-DEFAULT_USER_POOL_ID: Final = ""
-DEFAULT_CLIENT_ID: Final = ""
-DEFAULT_API_URL: Final = ""
+DEFAULT_USER_POOL_ID: Final = "eu-west-1_4VBYn5OoK"
+DEFAULT_CLIENT_ID: Final = "5qp60epsh9koila5nmavsv1hpn"
+DEFAULT_API_URL: Final = "https://4hmz4jbydjbarli4cogtp2s5yi.appsync-api.eu-west-1.amazonaws.com/graphql"

@@ -76,6 +76,27 @@
       },
       "online": {
         "name": "Tilkobling"
+      },
+      "water_alarm": {
+        "name": "Vannalarm"
+      }
+    },
+    "button": {
+      "resolve_water_alarm": {
+        "name": "Kvitter vannalarm"
+      }
+    },
+    "sensor": {
+      "water_guard_mode": {
+        "name": "Waterguard-modus",
+        "state": {
+          "normal": "Normal",
+          "no_valve": "Ingen ventil",
+          "overridden": "Overstyrt",
+          "restored": "Gjenopprettet",
+          "tamper_warning": "Sabotasjevarsel",
+          "tampered": "Sabotert"
+        }
       }
     }
   },
@@ -85,6 +106,12 @@
     },
     "open_disabled": {
       "message": "Åpning av vann fra Home Assistant er slått av i integrasjonens innstillinger."
+    },
+    "no_active_alarm": {
+      "message": "Det finnes ingen aktiv vannalarm å kvittere."
+    },
+    "alarm_failed": {
+      "message": "Klarte ikke å kvittere alarmen: {error}"
     }
   }
 }
