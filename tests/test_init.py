@@ -70,3 +70,17 @@ async def test_water_alarm_and_resolve(hass: HomeAssistant, mock_api: dict[str, 
     )
     mock_api["resolve_alarm"].assert_awaited_once_with("a1")
     mock_api["set_valve"].assert_not_awaited()  # resolving never reopens the water
+
+
+async def test_diagnostics(hass: HomeAssistant, mock_api: dict[str, AsyncMock]) -> None:
+    from unittest.mock import patch
+
+    from custom_components.abralife.diagnostics import async_get_config_entry_diagnostics
+
+    entry = await _setup(hass)
+    dump = {"home": {"id": "h1", "hubs": [{"id": "hub1", "devices": [{"id": "v1", "serialNumber": "X"}]}]}, "errors": []}
+    with patch("custom_components.abralife.api.AbraClient.diagnostics_dump", AsyncMock(return_value=dump)):
+        result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["entry"]["refresh_token"] == "**REDACTED**"
+    assert result["all_attributes"]["home"]["hubs"][0]["devices"][0]["serialNumber"] == "**REDACTED**"
+    assert {d["id"] for d in result["parsed_devices"]} == {"hub1", "v1", "s1", "lock1"}

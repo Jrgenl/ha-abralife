@@ -98,3 +98,92 @@ mutation AbraAlarmResolve($alarmId: ID!) {
   }
 }
 """
+
+
+# Diagnostics only: every trait attribute type in the schema (except network
+# credentials and location), so a diagnostics download shows exactly what
+# Abra reports for a device. Not used for polling.
+_ALL_ATTRIBUTES = """
+  attributes {
+        __typename
+        ... on TraitAttributeAvailableArmLevels { name availableArmLevels { id description } }
+        ... on TraitAttributeIsArmed { name isArmed }
+        ... on TraitAttributeArmLevel { name armLevel }
+        ... on TraitAttributeDisarmDefaultTimeout { name disarmDefaultTimeout }
+        ... on TraitAttributeIsConnected { name isConnected reportedAt }
+        ... on TraitAttributeHeartbeatInterval { name heartbeatInterval }
+        ... on TraitAttributeHeartbeatsThreshold { name heartbeatsThreshold }
+        ... on TraitAttributeGatewayConnected { name ethernetConnected wifiConnected cellularConnected }
+        ... on TraitAttributeWifiConfigured { name wifiConfigured }
+        ... on TraitAttributeCellularOperator { name cellularOperator }
+        ... on TraitAttributeBrightness { name brightness }
+        ... on TraitAttributeColor { name hue saturation }
+        ... on TraitAttributeIsOn { name isOn }
+        ... on TraitAttributeOpenPercent { name openPercent }
+        ... on TraitAttributeCurrentPowerSourceLevel { name currentPowerSourceLevel }
+        ... on TraitAttributeLowBatteryWarning { name lowBatteryWarning }
+        ... on TraitAttributeCurrentPowerSource { name currentPowerSource }
+        ... on TraitAttributeStatusCharging { name statusCharging }
+        ... on TraitAttributeCurrentPowerMode { name currentPowerMode }
+        ... on TraitAttributeAvailablePowerSources { name availablePowerSources }
+        ... on TraitAttributeBatteryVoltage { name batteryVoltage }
+        ... on TraitAttributeMainsVoltage { name mainsVoltage }
+        ... on TraitAttributeRunningPowerConsumption { name runningPowerConsumption }
+        ... on TraitAttributePriority { name priority }
+        ... on TraitAttributeAirQuality { name airQuality }
+        ... on TraitAttributeCo2 { name co2 }
+        ... on TraitAttributeHumidity { name humidity humidityIndicator }
+        ... on TraitAttributeTemperature { name temperature }
+        ... on TraitAttributeVoc { name voc }
+        ... on TraitAttributeIsUnlocked { name isUnlocked }
+        ... on TraitAttributeChildLock { name childLock }
+        ... on TraitAttributeFault { name fault { id name code description consumer guiPriority } }
+        ... on TraitAttributeTemperatureSetpoint { name temperatureSetpoint minSetpoint maxSetpoint }
+        ... on TraitAttributeTemperatureSetpointPercentage { name temperatureSetpointPercentage minSetpoint maxSetpoint }
+        ... on TraitAttributeAvailableClimateModes { name availableClimateModes }
+        ... on TraitAttributeClimateMode { name climateMode }
+        ... on TraitAttributeMaximumFloorTemperature { name maximumFloorTemperature }
+        ... on TraitAttributeFrostGuard { name frostGuard }
+        ... on TraitAttributeNightSwitch { name nightSwitch }
+        ... on TraitAttributeRegulatorMode { name regulatorMode }
+        ... on TraitAttributeHeatingElementActive { name heatingElementActive }
+        ... on TraitAttributeAlarmSound { name alarmSound }
+        ... on TraitAttributeAlarm { name alarm snoozed }
+        ... on TraitAttributeWaterDetectorCableConnected { name waterDetectorCableConnected }
+        ... on TraitAttributeWaterValvesConnected { name waterValvesConnected }
+        ... on TraitAttributeBracket { name bracket }
+        ... on TraitAttributeDisabled { name disabled }
+        ... on TraitAttributeMotionDetected { name lastMotionDetectedAt }
+        ... on TraitAttributeValveInfo { name valveType typeOfValve numValves }
+        ... on TraitAttributeElectricVehicleCharger { name status chargingStartedAt chargingFinishedAt chargingSessionCost kwhCharged currency }
+        ... on TraitAttributeEvChargingSpeed { name evCurrentAmperage evMinAmperage evMaxAmperage }
+        ... on TraitAttributeTestMode { name isOn lastTriggeredAt }
+        ... on TraitAttributePing { name ping }
+        ... on TraitAttributeBasicInfo { name firmwareVersion model }
+  }
+"""
+
+DIAGNOSTICS_QUERY = f"""
+query AbraDiagnostics {{
+  homes {{
+    id
+    hubs {{
+      id
+      name
+      hubType
+      productType
+      firmwareVersion
+      waterGuard {{ mode wasWaterSensorTapePreviouslyConnected showLevel1Warning showLevel2Warning }}
+      traits {{ traitType commands {_ALL_ATTRIBUTES} }}
+      devices {{
+        id
+        deviceType
+        name
+        firmwareVersion
+        manufacturer {{ name }}
+        traits {{ traitType commands {_ALL_ATTRIBUTES} }}
+      }}
+    }}
+  }}
+}}
+"""

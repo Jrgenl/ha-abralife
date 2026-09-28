@@ -216,6 +216,10 @@ class AbraClient:
         self._lock = asyncio.Lock()
         # Abra's own example app authorises AppSync with the ID token.
         self._use_id_token = True
+        # GraphQL errors returned alongside data by the most recent request
+        self.last_errors: list[dict[str, Any]] = []
+        # GraphQL errors from the latest poll (homes + alarms)
+        self.poll_errors: list[dict[str, Any]] = []
 
     @property
     def refresh_token(self) -> str | None:
@@ -345,8 +349,13 @@ class AbraClient:
             if "Unauthorized" in messages:
                 raise AbraAuthError(messages)
             raise AbraConnectionError(messages)
-        if payload.get("errors"):
-            _LOGGER.debug("Partial GraphQL errors: %s", payload["errors"])
+        self.last_errors = payload.get("errors") or []
+        if self.last_errors:
+            # Abra nulls fields it can't resolve; those states then show as unknown
+            _LOGGER.warning(
+                "Abralife returned partial data: %s",
+                "; ".join(str(e.get("message")) for e in self.last_errors[:5]),
+            )
         return payload.get("data") or {}
 
     # ------------------------------------------------------------ high level
@@ -360,16 +369,27 @@ class AbraClient:
     async def get_data(self, home_id: str) -> AbraData:
         """Fetch all hubs, devices and alarms for one home."""
         data = await self.graphql(queries.HOMES_QUERY)
+        errors = list(self.last_errors)
         home = next((h for h in data.get("homes") or [] if str(h.get("id")) == home_id), None)
         if home is None:
             raise AbraConnectionError(f"Home {home_id} is no longer available on this account")
         alarms_data = await self.graphql(queries.ALARMS_QUERY, {"homeId": home_id})
+        self.poll_errors = errors + self.last_errors
         alarms = [
             AbraAlarm(id=str(a["id"]), kind=a["__typename"], state=a.get("state") or "", triggered_at=a.get("triggeredAt"))
             for a in ((alarms_data.get("alarms") or {}).get("alarms") or [])
             if a and a.get("id")
         ]
         return AbraData(devices=parse_home(home), alarms=alarms)
+
+    async def diagnostics_dump(self, home_id: str) -> dict[str, Any]:
+        """Every trait attribute Abra reports for the home, plus any API errors."""
+        try:
+            data = await self.graphql(queries.DIAGNOSTICS_QUERY)
+        except AbraError as err:
+            return {"error": f"{type(err).__name__}: {err}"}
+        homes = [h for h in data.get("homes") or [] if h and str(h.get("id")) == home_id]
+        return {"home": homes[0] if homes else None, "errors": self.last_errors}
 
     async def set_valve(self, device_id: str, open_: bool) -> None:
         data = await self.graphql(queries.SET_VALVE_MUTATION, {"deviceId": device_id, "open": open_})
