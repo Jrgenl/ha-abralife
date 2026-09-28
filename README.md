@@ -79,4 +79,8 @@ automation:
   fra enhetene (tokens og e-post er fjernet).
 - Tester: `pip install pytest-homeassistant-custom-component pycognito && pytest`.
 
+## Lisens
+
+GPL-3.0. Se [LICENSE](LICENSE).
+
 Ikke tilknyttet Abra AS eller Waterguard AS.
